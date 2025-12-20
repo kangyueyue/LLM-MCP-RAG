@@ -13,12 +13,12 @@ import (
 
 // ChatOpenAI 聊天模型
 type ChatOpenAI struct {
-	ctx          context.Context                          // 上下文
+	Ctx          context.Context                          // 上下文
 	ModelName    string                                   // 模型名称
 	Message      []openai.ChatCompletionMessageParamUnion // 每一次对话session中包含的消息
 	SystemPrompt string                                   // 系统提示词
 	RagContext   string                                   // rag上下文
-	tools        []*mcp.Tool                               // 工具
+	Tools        []*mcp.Tool                              // 工具
 	LLM          openai.Client                            // LLM大模型客户端
 }
 
@@ -38,7 +38,7 @@ func WithRAGContext(ctx string) LLMOptions {
 }
 func WithTools(tools []*mcp.Tool) LLMOptions {
 	return func(c *ChatOpenAI) {
-		c.tools = tools
+		c.Tools = tools
 	}
 }
 
@@ -62,7 +62,7 @@ func NewChatOpenAI(ctx context.Context, modelName string, opts ...LLMOptions) *C
 	}
 	llm := openai.NewClient(opt...)
 	c := &ChatOpenAI{
-		ctx:       ctx,
+		Ctx:       ctx,
 		ModelName: modelName,
 		LLM:       llm,
 	}
@@ -87,11 +87,11 @@ func (c *ChatOpenAI) Chat(prompt string) (string, []openai.ToolCallUnion) {
 		// 添加用户提示词
 		c.Message = append(c.Message, openai.UserMessage(prompt))
 	}
-	stream := c.LLM.Chat.Completions.NewStreaming(c.ctx, openai.ChatCompletionNewParams{
+	stream := c.LLM.Chat.Completions.NewStreaming(c.Ctx, openai.ChatCompletionNewParams{
 		Model:    c.ModelName,
 		Messages: c.Message,
 		Seed:     openai.Int(0),
-		Tools:    c.McpToolToOpenAITool(c.tools),
+		Tools:    c.McpToolToOpenAITool(c.Tools),
 	})
 	var acc openai.ChatCompletionAccumulator // 用户结果的类加
 	var toolCalls []openai.ToolCallUnion
@@ -118,22 +118,22 @@ func (c *ChatOpenAI) Chat(prompt string) (string, []openai.ToolCallUnion) {
 			})
 		}
 		// 收集refusal
-		if refusal,ok := acc.JustFinishedRefusal();ok{
-			fmt.Println("refusal :",refusal)
+		if refusal, ok := acc.JustFinishedRefusal(); ok {
+			fmt.Println("refusal :", refusal)
 		}
 		// 收集delta
-		if len(chunk.Choices) > 0{
+		if len(chunk.Choices) > 0 {
 			delta := chunk.Choices[0].Delta.Content
 			// 如果没有停止生成
-			if !finished{
+			if !finished {
 				result += delta
 			}
 		}
 	}
-	if len(acc.Choices) > 0{
+	if len(acc.Choices) > 0 {
 		c.Message = append(c.Message, acc.Choices[0].Message.ToParam()) // 最后一次生成的结果加入
 	}
-	if stream.Err() != nil{
+	if stream.Err() != nil {
 		panic(stream.Err())
 	}
 	return result, toolCalls
