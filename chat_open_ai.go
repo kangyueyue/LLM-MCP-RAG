@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
+	"os"
 )
 
 // ChatOpenAI 聊天模型
@@ -18,7 +17,7 @@ type ChatOpenAI struct {
 	Message      []openai.ChatCompletionMessageParamUnion // 每一次对话session中包含的消息
 	SystemPrompt string                                   // 系统提示词
 	RagContext   string                                   // rag上下文
-	Tools        []*mcp.Tool                              // 工具
+	Tools        []mcp.Tool                               // 工具
 	LLM          openai.Client                            // LLM大模型客户端
 }
 
@@ -36,7 +35,7 @@ func WithRAGContext(ctx string) LLMOptions {
 		c.RagContext = ctx
 	}
 }
-func WithTools(tools []*mcp.Tool) LLMOptions {
+func WithTools(tools []mcp.Tool) LLMOptions {
 	return func(c *ChatOpenAI) {
 		c.Tools = tools
 	}
@@ -83,15 +82,20 @@ func NewChatOpenAI(ctx context.Context, modelName string, opts ...LLMOptions) *C
 
 // Chat 和模型通信的方法
 func (c *ChatOpenAI) Chat(prompt string) (string, []openai.ToolCallUnion) {
+	fmt.Println("init chat...")
 	if prompt != "" {
 		// 添加用户提示词
 		c.Message = append(c.Message, openai.UserMessage(prompt))
 	}
+	toolsParam := c.McpToolToOpenAITool(c.Tools)
+	if len(toolsParam) == 0 {
+		toolsParam = nil
+	}
 	stream := c.LLM.Chat.Completions.NewStreaming(c.Ctx, openai.ChatCompletionNewParams{
 		Model:    c.ModelName,
 		Messages: c.Message,
+		Tools:    toolsParam,
 		Seed:     openai.Int(0),
-		Tools:    c.McpToolToOpenAITool(c.Tools),
 	})
 	var acc openai.ChatCompletionAccumulator // 用户结果的类加
 	var toolCalls []openai.ToolCallUnion
@@ -141,27 +145,50 @@ func (c *ChatOpenAI) Chat(prompt string) (string, []openai.ToolCallUnion) {
 }
 
 // McpToolToOpenAITool 将mcp工具转换为openai工ChatCompletionToolUnionParam具
-func (c *ChatOpenAI) McpToolToOpenAITool(mcpTools []*mcp.Tool) []openai.ChatCompletionToolUnionParam {
-	openAITool := make([]openai.ChatCompletionToolUnionParam, 0, len(mcpTools))
+func (c *ChatOpenAI) McpToolToOpenAITool(
+	mcpTools []mcp.Tool,
+) []openai.ChatCompletionToolUnionParam {
+
+	openAITools := make([]openai.ChatCompletionToolUnionParam, 0, len(mcpTools))
+
 	for _, tool := range mcpTools {
+
+		// --- type 兜底 ---
+		schemaType := tool.InputSchema.Type
+		if schemaType == "" {
+			schemaType = "object"
+		}
+
+		// --- properties 兜底 ---
+		properties := tool.InputSchema.Properties
+		if properties == nil {
+			properties = map[string]any{}
+		}
+
+		// --- 🚨 required 兜底（关键） ---
+		required := tool.InputSchema.Required
+		if required == nil {
+			required = []string{}
+		}
+
 		params := openai.FunctionParameters{
-			"type":       tool.InputSchema.Type,
-			"properties": tool.InputSchema.Properties,
-			"required":   tool.InputSchema.Required,
+			"type":       schemaType,
+			"properties": properties,
+			"required":   required,
 		}
-		// 关键兜底：若type为空，默认用object，避免OpenAI拒绝工具定义
-		if t, ok := params["type"].(string); !ok || t == "" {
-			params["type"] = "object"
-		}
-		openAITool = append(openAITool, openai.ChatCompletionToolUnionParam{
-			OfFunction: &openai.ChatCompletionFunctionToolParam{
-				Function: shared.FunctionDefinitionParam{
-					Name:        tool.Name,
-					Description: openai.String(tool.Description),
-					Parameters:  params,
+
+		openAITools = append(openAITools,
+			openai.ChatCompletionToolUnionParam{
+				OfFunction: &openai.ChatCompletionFunctionToolParam{
+					Function: shared.FunctionDefinitionParam{
+						Name:        tool.Name,
+						Description: openai.String(tool.Description),
+						Parameters:  params,
+					},
 				},
 			},
-		})
+		)
 	}
-	return openAITool
+
+	return openAITools
 }
