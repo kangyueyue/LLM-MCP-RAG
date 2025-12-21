@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/joho/godotenv"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -46,6 +47,13 @@ func NewChatOpenAI(ctx context.Context, modelName string, opts ...LLMOptions) *C
 	if modelName == "" {
 		panic("model name cannot be empty")
 	}
+
+	// 加载.env文件
+	err := godotenv.Load()
+	if err != nil {
+		panic("Error loading .env file")
+	}
+
 	var (
 		apiKey  = os.Getenv("OPENAI_API_KEY")
 		baseURL = os.Getenv("OPENAI_BASE_URL")

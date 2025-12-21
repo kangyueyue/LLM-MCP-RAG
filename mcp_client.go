@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"github.com/bytedance/sonic"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -81,7 +81,7 @@ func (c *McpClient) CallTool(name string, arg any) (string, error) {
 	var arguments map[string]any
 	switch v := arg.(type) {
 	case string:
-		if err := sonic.Unmarshal([]byte(v), &arguments); err != nil {
+		if err := json.Unmarshal([]byte(v), &arguments); err != nil {
 			return "", err
 		}
 	case map[string]any:
